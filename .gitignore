@@ -1,0 +1,50 @@
+# Dependencies
+node_modules/
+
+# Build output — Desktop
+desktop/dist/
+desktop/build/
+desktop/package/
+
+# Build output — Agent (cross-compiled binaries)
+agent/eyes-agent
+agent/eyes-agent-*
+agent/*.exe
+
+# OS files
+.DS_Store
+Thumbs.db
+._*
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Bun
+bun.lock
+
+# Go test/build cache
+agent/cover.out
+agent/coverage.html
+
+# Electrobun
+*.app/
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Database (local user data)
+*.db
+*.db-wal
+*.db-shm
+
+# Logs
+*.log
+
+# Claude Code
+.claude/
