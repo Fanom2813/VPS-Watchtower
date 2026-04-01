@@ -48,3 +48,4 @@ agent/coverage.html
 
 # Claude Code
 .claude/
+agent/agent.json
