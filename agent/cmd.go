@@ -9,7 +9,10 @@ import (
 	"os/signal"
 	"syscall"
 
+	"time"
+
 	"github.com/eyes-on-vps/agent/internal/auth"
+	"github.com/eyes-on-vps/agent/internal/collector"
 	"github.com/eyes-on-vps/agent/internal/config"
 	"github.com/eyes-on-vps/agent/internal/protocol"
 	"github.com/eyes-on-vps/agent/internal/service"
@@ -143,6 +146,23 @@ func cmdRun(args []string) {
 	server := transport.NewServer(authHandler, func(msg protocol.Message) {
 		log.Printf("received: type=%s", msg.Type)
 	})
+
+	// Collectors only run while at least one desktop is connected
+	metrics := collector.NewManager(
+		collector.SystemCollector(3*time.Second),
+		collector.ProcessCollector(10*time.Second),
+		collector.AuthLogCollector(5*time.Second),
+		collector.NetworkCollector(10*time.Second),
+		collector.DockerCollector(15*time.Second),
+		collector.IntrusionCollector(5*time.Second),
+		collector.OutboundCollector(10*time.Second),
+		collector.TamperCollector(60*time.Second),
+		collector.CronCollector(30*time.Second),
+		collector.SensitiveFileCollector(15*time.Second),
+		collector.SystemdCollector(30*time.Second),
+		collector.FileIntegrityCollector(30*time.Second),
+	)
+	server.OnActive(metrics.HandleActive)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

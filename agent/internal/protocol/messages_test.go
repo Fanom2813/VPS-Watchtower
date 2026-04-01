@@ -10,8 +10,6 @@ import (
 func TestEncodeDecode_PairMessage(t *testing.T) {
 	payload := protocol.PairPayload{
 		PairingToken: "tok-abc123",
-		AgentID:      "agent-1",
-		Hostname:     "vps-prod-01",
 	}
 
 	data, err := protocol.Encode(protocol.TypeAuthPair, payload)
@@ -36,17 +34,11 @@ func TestEncodeDecode_PairMessage(t *testing.T) {
 	if decoded.PairingToken != payload.PairingToken {
 		t.Errorf("pairingToken: expected %q, got %q", payload.PairingToken, decoded.PairingToken)
 	}
-	if decoded.AgentID != payload.AgentID {
-		t.Errorf("agentId: expected %q, got %q", payload.AgentID, decoded.AgentID)
-	}
-	if decoded.Hostname != payload.Hostname {
-		t.Errorf("hostname: expected %q, got %q", payload.Hostname, decoded.Hostname)
-	}
 }
 
 func TestEncodeDecode_ConnectMessage(t *testing.T) {
 	payload := protocol.ConnectPayload{
-		AgentToken: "jwt-token-here",
+		Token: "jwt-token-here",
 	}
 
 	data, err := protocol.Encode(protocol.TypeAuthConnect, payload)
@@ -68,14 +60,20 @@ func TestEncodeDecode_ConnectMessage(t *testing.T) {
 		t.Fatalf("DecodePayload failed: %v", err)
 	}
 
-	if decoded.AgentToken != payload.AgentToken {
-		t.Errorf("agentToken: expected %q, got %q", payload.AgentToken, decoded.AgentToken)
+	if decoded.Token != payload.Token {
+		t.Errorf("token: expected %q, got %q", payload.Token, decoded.Token)
 	}
 }
 
 func TestEncodeDecode_PairSuccessPayload(t *testing.T) {
 	payload := protocol.PairSuccessPayload{
-		AgentToken: "new-jwt-token",
+		Token: "new-jwt-token",
+		Agent: protocol.AgentInfo{
+			ID:       "agent-1",
+			Hostname: "vps-prod",
+			OS:       "linux",
+			Arch:     "amd64",
+		},
 	}
 
 	data, err := protocol.Encode(protocol.TypeAuthPairSuccess, payload)
@@ -97,8 +95,11 @@ func TestEncodeDecode_PairSuccessPayload(t *testing.T) {
 		t.Fatalf("DecodePayload failed: %v", err)
 	}
 
-	if decoded.AgentToken != payload.AgentToken {
-		t.Errorf("agentToken: expected %q, got %q", payload.AgentToken, decoded.AgentToken)
+	if decoded.Token != payload.Token {
+		t.Errorf("token: expected %q, got %q", payload.Token, decoded.Token)
+	}
+	if decoded.Agent.ID != payload.Agent.ID {
+		t.Errorf("agent.id: expected %q, got %q", payload.Agent.ID, decoded.Agent.ID)
 	}
 }
 
@@ -115,10 +116,6 @@ func TestEncodeDecode_ErrorPayload(t *testing.T) {
 	msg, err := protocol.Decode(data)
 	if err != nil {
 		t.Fatalf("Decode failed: %v", err)
-	}
-
-	if msg.Type != protocol.TypeAuthPairError {
-		t.Errorf("expected type %q, got %q", protocol.TypeAuthPairError, msg.Type)
 	}
 
 	var decoded protocol.ErrorPayload
@@ -141,8 +138,6 @@ func TestDecode_InvalidJSON(t *testing.T) {
 func TestEncode_ProducesValidJSON(t *testing.T) {
 	data, err := protocol.Encode(protocol.TypeAuthPair, protocol.PairPayload{
 		PairingToken: "tok",
-		AgentID:      "a1",
-		Hostname:     "host",
 	})
 	if err != nil {
 		t.Fatalf("Encode failed: %v", err)
@@ -150,30 +145,5 @@ func TestEncode_ProducesValidJSON(t *testing.T) {
 
 	if !json.Valid(data) {
 		t.Error("Encode produced invalid JSON")
-	}
-}
-
-func TestDecodePayload_TypeMismatch(t *testing.T) {
-	// Encode a PairPayload but try to decode as ConnectSuccessPayload
-	data, err := protocol.Encode(protocol.TypeAuthPair, protocol.PairPayload{
-		PairingToken: "tok",
-		AgentID:      "a1",
-		Hostname:     "host",
-	})
-	if err != nil {
-		t.Fatalf("Encode failed: %v", err)
-	}
-
-	msg, err := protocol.Decode(data)
-	if err != nil {
-		t.Fatalf("Decode failed: %v", err)
-	}
-
-	// This should still unmarshal without error (JSON is permissive),
-	// but the fields won't match — ConnectSuccessPayload.AgentID will get "a1"
-	// from the agentId field in PairPayload.
-	var decoded protocol.ConnectSuccessPayload
-	if err := protocol.DecodePayload(msg, &decoded); err != nil {
-		t.Fatalf("DecodePayload failed: %v", err)
 	}
 }

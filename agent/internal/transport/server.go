@@ -15,16 +15,23 @@ import (
 	"github.com/eyes-on-vps/agent/internal/protocol"
 )
 
-// MessageHandler is called for each non-auth message received from the desktop.
+// MessageHandler is called for each non-auth message received from a desktop.
 type MessageHandler func(msg protocol.Message)
+
+// LifecycleHandler is called when the first desktop connects or the last disconnects.
+// OnActive receives a context canceled when all desktops disconnect, and a broadcast function.
+type LifecycleHandler func(ctx context.Context, broadcast func(msgType string, payload any) error)
 
 // Server manages the WebSocket server that desktop clients connect to.
 type Server struct {
-	auth    *auth.Handler
-	handler MessageHandler
+	auth     *auth.Handler
+	handler  MessageHandler
+	onActive LifecycleHandler
 
-	mu   sync.Mutex
-	conn *websocket.Conn
+	mu    sync.Mutex
+	conns map[*websocket.Conn]struct{}
+	// cancel for the active session (first connect → last disconnect)
+	activeCancel context.CancelFunc
 }
 
 // NewServer creates a transport server.
@@ -32,14 +39,21 @@ func NewServer(authHandler *auth.Handler, handler MessageHandler) *Server {
 	return &Server{
 		auth:    authHandler,
 		handler: handler,
+		conns:   make(map[*websocket.Conn]struct{}),
 	}
+}
+
+// OnActive sets a handler called when the first desktop connects.
+// The context is canceled when the last desktop disconnects.
+func (s *Server) OnActive(handler LifecycleHandler) {
+	s.onActive = handler
 }
 
 // Run starts the WebSocket server and blocks until the context is canceled.
 func (s *Server) Run(ctx context.Context, port int) error {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/ws", func(w http.ResponseWriter, r *http.Request) {
-		s.handleConnection(r.Context(), w, r)
+		s.handleConnection(ctx, w, r)
 	})
 
 	listener, err := net.Listen("tcp", fmt.Sprintf(":%d", port))
@@ -72,35 +86,19 @@ func (s *Server) handleConnection(ctx context.Context, w http.ResponseWriter, r 
 	}
 	defer conn.CloseNow()
 
-	// Authenticate the desktop
 	if err := s.authenticate(ctx, conn); err != nil {
 		log.Printf("auth failed: %v", err)
 		return
 	}
 
-	s.mu.Lock()
-	// Close any existing connection (only one desktop at a time)
-	if s.conn != nil {
-		s.conn.Close(websocket.StatusGoingAway, "replaced by new connection")
-	}
-	s.conn = conn
-	s.mu.Unlock()
+	s.addConn(ctx, conn)
+	defer s.removeConn(conn)
 
-	defer func() {
-		s.mu.Lock()
-		if s.conn == conn {
-			s.conn = nil
-		}
-		s.mu.Unlock()
-	}()
+	log.Printf("desktop connected (%d total)", s.connCount())
 
-	log.Println("desktop connected and authenticated")
-
-	// Listen for messages
 	for {
 		var msg protocol.Message
 		if err := wsjson.Read(ctx, conn, &msg); err != nil {
-			log.Printf("desktop disconnected: %v", err)
 			return
 		}
 		if s.handler != nil {
@@ -109,25 +107,56 @@ func (s *Server) handleConnection(ctx context.Context, w http.ResponseWriter, r 
 	}
 }
 
+func (s *Server) addConn(ctx context.Context, conn *websocket.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	wasEmpty := len(s.conns) == 0
+	s.conns[conn] = struct{}{}
+
+	// First desktop connected — start collectors
+	if wasEmpty && s.onActive != nil {
+		activeCtx, cancel := context.WithCancel(ctx)
+		s.activeCancel = cancel
+		go s.onActive(activeCtx, s.Broadcast)
+	}
+}
+
+func (s *Server) removeConn(conn *websocket.Conn) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	delete(s.conns, conn)
+	log.Printf("desktop disconnected (%d remaining)", len(s.conns))
+
+	// Last desktop disconnected — stop collectors
+	if len(s.conns) == 0 && s.activeCancel != nil {
+		s.activeCancel()
+		s.activeCancel = nil
+	}
+}
+
+func (s *Server) connCount() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return len(s.conns)
+}
+
 func (s *Server) authenticate(ctx context.Context, conn *websocket.Conn) error {
-	// Read auth message from desktop
 	var msg protocol.Message
 	if err := wsjson.Read(ctx, conn, &msg); err != nil {
 		return fmt.Errorf("read auth: %w", err)
 	}
 
-	// Delegate to auth handler
 	response, err := s.auth.HandleAuth(msg)
 	if err != nil {
 		return err
 	}
 
-	// Send response back
 	if err := conn.Write(ctx, websocket.MessageText, response); err != nil {
 		return fmt.Errorf("write auth response: %w", err)
 	}
 
-	// Check if it was a success or error response
 	respMsg, err := protocol.Decode(response)
 	if err != nil {
 		return err
@@ -141,20 +170,31 @@ func (s *Server) authenticate(ctx context.Context, conn *websocket.Conn) error {
 	}
 }
 
-// Send transmits a message to the connected desktop.
-func (s *Server) Send(ctx context.Context, msgType string, payload any) error {
-	s.mu.Lock()
-	conn := s.conn
-	s.mu.Unlock()
-
-	if conn == nil {
-		return fmt.Errorf("no desktop connected")
-	}
-
+// Broadcast sends a message to all connected desktops.
+func (s *Server) Broadcast(msgType string, payload any) error {
 	data, err := protocol.Encode(msgType, payload)
 	if err != nil {
 		return fmt.Errorf("encode: %w", err)
 	}
 
+	s.mu.Lock()
+	conns := make([]*websocket.Conn, 0, len(s.conns))
+	for c := range s.conns {
+		conns = append(conns, c)
+	}
+	s.mu.Unlock()
+
+	for _, c := range conns {
+		c.Write(context.Background(), websocket.MessageText, data)
+	}
+	return nil
+}
+
+// Send transmits a message to a specific connection (kept for future use).
+func (s *Server) Send(ctx context.Context, conn *websocket.Conn, msgType string, payload any) error {
+	data, err := protocol.Encode(msgType, payload)
+	if err != nil {
+		return fmt.Errorf("encode: %w", err)
+	}
 	return conn.Write(ctx, websocket.MessageText, data)
 }

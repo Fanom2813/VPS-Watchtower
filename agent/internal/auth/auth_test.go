@@ -2,12 +2,8 @@ package auth_test
 
 import (
 	"encoding/json"
-	"os"
 	"path/filepath"
 	"testing"
-	"time"
-
-	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/eyes-on-vps/agent/internal/auth"
 	"github.com/eyes-on-vps/agent/internal/config"
@@ -28,320 +24,164 @@ func tempConfig(t *testing.T, cfg *config.Config) *config.Config {
 	return loaded
 }
 
-func TestNeedsPairing_NoToken(t *testing.T) {
+func TestHandleAuth_PairSuccess(t *testing.T) {
 	cfg := tempConfig(t, &config.Config{
-		ServerURL:    "ws://localhost:9000",
-		PairingToken: "pair-123",
-		AgentID:      "agent-1",
+		AgentID:       "agent-1",
+		Port:          9090,
+		SigningSecret: "test-secret-key-for-jwt-signing",
+		PairingToken:  "valid-token",
 	})
 	h := auth.NewHandler(cfg, "test")
 
-	if !h.NeedsPairing() {
-		t.Error("expected NeedsPairing=true when no agent token")
-	}
-}
+	raw, _ := json.Marshal(protocol.PairPayload{PairingToken: "valid-token"})
+	msg := protocol.Message{Type: protocol.TypeAuthPair, Payload: raw}
 
-func TestNeedsPairing_HasToken(t *testing.T) {
-	cfg := tempConfig(t, &config.Config{
-		ServerURL:  "ws://localhost:9000",
-		AgentToken: "some-jwt",
-		AgentID:    "agent-1",
-	})
-	h := auth.NewHandler(cfg, "test")
-
-	if h.NeedsPairing() {
-		t.Error("expected NeedsPairing=false when agent token exists")
-	}
-}
-
-func TestBuildAuthMessage_Pairing(t *testing.T) {
-	cfg := tempConfig(t, &config.Config{
-		ServerURL:    "ws://localhost:9000",
-		PairingToken: "pair-token-abc",
-		AgentID:      "agent-42",
-	})
-	h := auth.NewHandler(cfg, "test")
-
-	data, err := h.BuildAuthMessage()
+	resp, err := h.HandleAuth(msg)
 	if err != nil {
-		t.Fatalf("BuildAuthMessage failed: %v", err)
+		t.Fatalf("HandleAuth failed: %v", err)
 	}
 
-	msg, err := protocol.Decode(data)
+	respMsg, _ := protocol.Decode(resp)
+	if respMsg.Type != protocol.TypeAuthPairSuccess {
+		t.Errorf("expected %q, got %q", protocol.TypeAuthPairSuccess, respMsg.Type)
+	}
+
+	var payload protocol.PairSuccessPayload
+	protocol.DecodePayload(respMsg, &payload)
+
+	if payload.Token == "" {
+		t.Error("expected non-empty token")
+	}
+	if payload.Agent.ID != "agent-1" {
+		t.Errorf("expected agent ID %q, got %q", "agent-1", payload.Agent.ID)
+	}
+
+	// Pairing token should be consumed
+	if cfg.PairingToken != "" {
+		t.Errorf("pairing token should be cleared, got %q", cfg.PairingToken)
+	}
+	if cfg.PairedTokenHash == "" {
+		t.Error("paired token hash should be set")
+	}
+}
+
+func TestHandleAuth_PairInvalidToken(t *testing.T) {
+	cfg := tempConfig(t, &config.Config{
+		AgentID:       "agent-1",
+		Port:          9090,
+		SigningSecret: "test-secret",
+		PairingToken:  "correct-token",
+	})
+	h := auth.NewHandler(cfg, "test")
+
+	raw, _ := json.Marshal(protocol.PairPayload{PairingToken: "wrong-token"})
+	msg := protocol.Message{Type: protocol.TypeAuthPair, Payload: raw}
+
+	resp, err := h.HandleAuth(msg)
 	if err != nil {
-		t.Fatalf("Decode failed: %v", err)
+		t.Fatalf("HandleAuth failed: %v", err)
 	}
 
-	if msg.Type != protocol.TypeAuthPair {
-		t.Errorf("expected type %q, got %q", protocol.TypeAuthPair, msg.Type)
-	}
-
-	var payload protocol.PairPayload
-	if err := protocol.DecodePayload(msg, &payload); err != nil {
-		t.Fatalf("DecodePayload failed: %v", err)
-	}
-
-	if payload.PairingToken != "pair-token-abc" {
-		t.Errorf("pairingToken: expected %q, got %q", "pair-token-abc", payload.PairingToken)
-	}
-	if payload.AgentID != "agent-42" {
-		t.Errorf("agentId: expected %q, got %q", "agent-42", payload.AgentID)
-	}
-	if payload.Hostname == "" {
-		t.Error("hostname should not be empty")
+	respMsg, _ := protocol.Decode(resp)
+	if respMsg.Type != protocol.TypeAuthPairError {
+		t.Errorf("expected %q, got %q", protocol.TypeAuthPairError, respMsg.Type)
 	}
 }
 
-func TestBuildAuthMessage_Connect(t *testing.T) {
+func TestHandleAuth_PairNoPairingToken(t *testing.T) {
 	cfg := tempConfig(t, &config.Config{
-		ServerURL:  "ws://localhost:9000",
-		AgentToken: "jwt-reconnect-token",
-		AgentID:    "agent-42",
+		AgentID:       "agent-1",
+		Port:          9090,
+		SigningSecret: "test-secret",
+		PairingToken:  "", // no token set
 	})
 	h := auth.NewHandler(cfg, "test")
 
-	data, err := h.BuildAuthMessage()
+	raw, _ := json.Marshal(protocol.PairPayload{PairingToken: "any-token"})
+	msg := protocol.Message{Type: protocol.TypeAuthPair, Payload: raw}
+
+	resp, err := h.HandleAuth(msg)
 	if err != nil {
-		t.Fatalf("BuildAuthMessage failed: %v", err)
+		t.Fatalf("HandleAuth failed: %v", err)
 	}
 
-	msg, err := protocol.Decode(data)
+	respMsg, _ := protocol.Decode(resp)
+	if respMsg.Type != protocol.TypeAuthPairError {
+		t.Errorf("expected %q, got %q", protocol.TypeAuthPairError, respMsg.Type)
+	}
+}
+
+func TestHandleAuth_ConnectSuccess(t *testing.T) {
+	cfg := tempConfig(t, &config.Config{
+		AgentID:       "agent-1",
+		Port:          9090,
+		SigningSecret: "test-secret-key-for-jwt-signing",
+		PairingToken:  "pair-token",
+	})
+	h := auth.NewHandler(cfg, "test")
+
+	// First pair to get a token
+	pairRaw, _ := json.Marshal(protocol.PairPayload{PairingToken: "pair-token"})
+	pairMsg := protocol.Message{Type: protocol.TypeAuthPair, Payload: pairRaw}
+	pairResp, _ := h.HandleAuth(pairMsg)
+	pairRespMsg, _ := protocol.Decode(pairResp)
+
+	var pairPayload protocol.PairSuccessPayload
+	protocol.DecodePayload(pairRespMsg, &pairPayload)
+
+	// Now reconnect with the issued token
+	connectRaw, _ := json.Marshal(protocol.ConnectPayload{Token: pairPayload.Token})
+	connectMsg := protocol.Message{Type: protocol.TypeAuthConnect, Payload: connectRaw}
+
+	resp, err := h.HandleAuth(connectMsg)
 	if err != nil {
-		t.Fatalf("Decode failed: %v", err)
+		t.Fatalf("HandleAuth failed: %v", err)
 	}
 
-	if msg.Type != protocol.TypeAuthConnect {
-		t.Errorf("expected type %q, got %q", protocol.TypeAuthConnect, msg.Type)
-	}
-
-	var payload protocol.ConnectPayload
-	if err := protocol.DecodePayload(msg, &payload); err != nil {
-		t.Fatalf("DecodePayload failed: %v", err)
-	}
-
-	if payload.AgentToken != "jwt-reconnect-token" {
-		t.Errorf("agentToken: expected %q, got %q", "jwt-reconnect-token", payload.AgentToken)
+	respMsg, _ := protocol.Decode(resp)
+	if respMsg.Type != protocol.TypeAuthConnectSuccess {
+		t.Errorf("expected %q, got %q", protocol.TypeAuthConnectSuccess, respMsg.Type)
 	}
 }
 
-func TestHandleResponse_PairSuccess(t *testing.T) {
+func TestHandleAuth_ConnectBadToken(t *testing.T) {
 	cfg := tempConfig(t, &config.Config{
-		ServerURL:    "ws://localhost:9000",
-		PairingToken: "pair-123",
-		AgentID:      "agent-1",
+		AgentID:         "agent-1",
+		Port:            9090,
+		SigningSecret:   "test-secret",
+		PairedTokenHash: "some-hash",
 	})
 	h := auth.NewHandler(cfg, "test")
 
-	raw, _ := json.Marshal(protocol.PairSuccessPayload{AgentToken: "new-jwt"})
-	msg := protocol.Message{Type: protocol.TypeAuthPairSuccess, Payload: raw}
+	raw, _ := json.Marshal(protocol.ConnectPayload{Token: "invalid-jwt"})
+	msg := protocol.Message{Type: protocol.TypeAuthConnect, Payload: raw}
 
-	if err := h.HandleResponse(msg); err != nil {
-		t.Fatalf("HandleResponse failed: %v", err)
-	}
-
-	// Verify config was updated and persisted
-	reloaded, err := config.Load(filepath.Join(t.TempDir()))
-	// Instead, verify in-memory state
-	_ = reloaded
-	_ = err
-
-	if h.NeedsPairing() {
-		t.Error("should not need pairing after successful pair")
-	}
-}
-
-func TestHandleResponse_PairSuccess_PersistsToken(t *testing.T) {
-	dir := t.TempDir()
-	path := filepath.Join(dir, "config.json")
-	cfg := &config.Config{
-		ServerURL:    "ws://localhost:9000",
-		PairingToken: "pair-123",
-		AgentID:      "agent-1",
-	}
-	cfg.SetPath(path)
-	if err := cfg.Save(); err != nil {
-		t.Fatalf("save config: %v", err)
-	}
-
-	h := auth.NewHandler(cfg, "test")
-
-	raw, _ := json.Marshal(protocol.PairSuccessPayload{AgentToken: "persisted-jwt"})
-	msg := protocol.Message{Type: protocol.TypeAuthPairSuccess, Payload: raw}
-
-	if err := h.HandleResponse(msg); err != nil {
-		t.Fatalf("HandleResponse failed: %v", err)
-	}
-
-	// Reload from disk and verify
-	data, err := os.ReadFile(path)
+	resp, err := h.HandleAuth(msg)
 	if err != nil {
-		t.Fatalf("read config file: %v", err)
+		t.Fatalf("HandleAuth failed: %v", err)
 	}
 
-	var saved config.Config
-	if err := json.Unmarshal(data, &saved); err != nil {
-		t.Fatalf("unmarshal saved config: %v", err)
-	}
-
-	if saved.AgentToken != "persisted-jwt" {
-		t.Errorf("saved agentToken: expected %q, got %q", "persisted-jwt", saved.AgentToken)
-	}
-	if saved.PairingToken != "" {
-		t.Errorf("saved pairingToken should be cleared, got %q", saved.PairingToken)
+	respMsg, _ := protocol.Decode(resp)
+	if respMsg.Type != protocol.TypeAuthConnectError {
+		t.Errorf("expected %q, got %q", protocol.TypeAuthConnectError, respMsg.Type)
 	}
 }
 
-func TestHandleResponse_ConnectSuccess(t *testing.T) {
-	cfg := tempConfig(t, &config.Config{
-		ServerURL:  "ws://localhost:9000",
-		AgentToken: "existing-jwt",
-		AgentID:    "agent-1",
-	})
-	h := auth.NewHandler(cfg, "test")
-
-	raw, _ := json.Marshal(protocol.ConnectSuccessPayload{AgentID: "agent-1"})
-	msg := protocol.Message{Type: protocol.TypeAuthConnectSuccess, Payload: raw}
-
-	if err := h.HandleResponse(msg); err != nil {
-		t.Fatalf("HandleResponse failed: %v", err)
-	}
-}
-
-func TestHandleResponse_PairError(t *testing.T) {
-	cfg := tempConfig(t, &config.Config{
-		ServerURL:    "ws://localhost:9000",
-		PairingToken: "bad-token",
-		AgentID:      "agent-1",
-	})
-	h := auth.NewHandler(cfg, "test")
-
-	raw, _ := json.Marshal(protocol.ErrorPayload{Message: "invalid token"})
-	msg := protocol.Message{Type: protocol.TypeAuthPairError, Payload: raw}
-
-	err := h.HandleResponse(msg)
-	if err == nil {
-		t.Fatal("expected error for pair failure")
-	}
-	if err.Error() != "pairing failed: invalid token" {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestHandleResponse_ConnectError(t *testing.T) {
-	cfg := tempConfig(t, &config.Config{
-		ServerURL:  "ws://localhost:9000",
-		AgentToken: "expired-jwt",
-		AgentID:    "agent-1",
-	})
-	h := auth.NewHandler(cfg, "test")
-
-	raw, _ := json.Marshal(protocol.ErrorPayload{Message: "token expired"})
-	msg := protocol.Message{Type: protocol.TypeAuthConnectError, Payload: raw}
-
-	err := h.HandleResponse(msg)
-	if err == nil {
-		t.Fatal("expected error for connect failure")
-	}
-	if err.Error() != "authentication failed: token expired" {
-		t.Errorf("unexpected error: %v", err)
-	}
-}
-
-func TestHandleResponse_UnexpectedType(t *testing.T) {
-	cfg := tempConfig(t, &config.Config{
-		ServerURL: "ws://localhost:9000",
-		AgentID:   "agent-1",
-	})
-	h := auth.NewHandler(cfg, "test")
-
-	msg := protocol.Message{Type: "unknown:type", Payload: nil}
-	err := h.HandleResponse(msg)
-	if err == nil {
-		t.Fatal("expected error for unexpected type")
-	}
-}
-
-func TestHandleResponse_EmptyAgentToken(t *testing.T) {
-	cfg := tempConfig(t, &config.Config{
-		ServerURL:    "ws://localhost:9000",
-		PairingToken: "pair-123",
-		AgentID:      "agent-1",
-	})
-	h := auth.NewHandler(cfg, "test")
-
-	raw, _ := json.Marshal(protocol.PairSuccessPayload{AgentToken: ""})
-	msg := protocol.Message{Type: protocol.TypeAuthPairSuccess, Payload: raw}
-
-	err := h.HandleResponse(msg)
-	if err == nil {
-		t.Fatal("expected error for empty agent token")
-	}
-}
-
-func TestIsAuthResponse(t *testing.T) {
+func TestIsAuthMessage(t *testing.T) {
 	tests := []struct {
 		msgType  string
 		expected bool
 	}{
-		{protocol.TypeAuthPairSuccess, true},
-		{protocol.TypeAuthPairError, true},
-		{protocol.TypeAuthConnectSuccess, true},
-		{protocol.TypeAuthConnectError, true},
-		{protocol.TypeAuthPair, false},
-		{protocol.TypeAuthConnect, false},
-		{"metrics:data", false},
+		{protocol.TypeAuthPair, true},
+		{protocol.TypeAuthConnect, true},
+		{protocol.TypeAuthPairSuccess, false},
+		{protocol.TypeAuthPairError, false},
+		{"metrics:system", false},
 	}
 
 	for _, tt := range tests {
-		if got := auth.IsAuthResponse(tt.msgType); got != tt.expected {
-			t.Errorf("IsAuthResponse(%q) = %v, want %v", tt.msgType, got, tt.expected)
+		if got := auth.IsAuthMessage(tt.msgType); got != tt.expected {
+			t.Errorf("IsAuthMessage(%q) = %v, want %v", tt.msgType, got, tt.expected)
 		}
-	}
-}
-
-func makeJWT(t *testing.T, claims jwt.MapClaims) string {
-	t.Helper()
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	s, err := token.SignedString([]byte("test-secret"))
-	if err != nil {
-		t.Fatalf("sign JWT: %v", err)
-	}
-	return s
-}
-
-func TestValidateToken_Valid(t *testing.T) {
-	tok := makeJWT(t, jwt.MapClaims{
-		"sub": "agent-1",
-		"exp": time.Now().Add(time.Hour).Unix(),
-	})
-	if err := auth.ValidateToken(tok); err != nil {
-		t.Errorf("expected valid token, got: %v", err)
-	}
-}
-
-func TestValidateToken_Expired(t *testing.T) {
-	tok := makeJWT(t, jwt.MapClaims{
-		"sub": "agent-1",
-		"exp": time.Now().Add(-time.Hour).Unix(),
-	})
-	err := auth.ValidateToken(tok)
-	if err == nil {
-		t.Error("expected error for expired token")
-	}
-}
-
-func TestValidateToken_NoExpiration(t *testing.T) {
-	tok := makeJWT(t, jwt.MapClaims{
-		"sub": "agent-1",
-	})
-	if err := auth.ValidateToken(tok); err != nil {
-		t.Errorf("token without exp should be valid, got: %v", err)
-	}
-}
-
-func TestValidateToken_Malformed(t *testing.T) {
-	err := auth.ValidateToken("not-a-jwt")
-	if err == nil {
-		t.Error("expected error for malformed token")
 	}
 }

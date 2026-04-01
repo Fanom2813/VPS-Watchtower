@@ -26,8 +26,17 @@ export const useAgentsStore = create<AgentsState>()((set, get) => ({
 	loadAgents: async () => {
 		set({ loading: true });
 		const rows = await rpc.request.getAgents({});
+
+		// Check actual connection status for each agent
+		const agentsWithStatus = await Promise.all(
+			rows.map(async (a) => {
+				const isConnected = await rpc.request.isAgentConnected({ agentId: a.id });
+				return { ...a, status: isConnected ? ("online" as const) : ("offline" as const) };
+			}),
+		);
+
 		set({
-			agents: rows.map((a) => ({ ...a, status: "offline" as const })),
+			agents: agentsWithStatus,
 			loading: false,
 		});
 	},

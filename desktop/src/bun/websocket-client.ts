@@ -131,6 +131,7 @@ export function connectToAgent(
 				installHandlers(agentId, url, token, ws);
 				onConnectFn?.(agentId);
 			} else if (msg.type === "auth:connect:error") {
+				console.log(`[WS] Auth failed for ${agentId}`);
 				ws.close();
 				// Don't auto-reconnect on auth errors
 			}

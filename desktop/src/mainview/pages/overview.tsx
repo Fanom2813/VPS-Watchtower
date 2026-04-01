@@ -1,8 +1,10 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router";
-import { Monitor, Plus, Trash2 } from "lucide-react";
+import { Monitor, Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { AgentListItem } from "@/components/agents/agent-list-item";
 import { useAgentsStore } from "@/stores/agents";
+import { PageLayout } from "@/components/layout/page-layout";
 
 export function OverviewPage() {
 	const navigate = useNavigate();
@@ -36,27 +38,23 @@ export function OverviewPage() {
 		}
 	};
 
-	return (
-		<div className="px-6 py-6 space-y-4">
-			<div className="flex items-center justify-between">
-				<div>
-					<h1 className="text-heading font-semibold tracking-[1.5px] uppercase text-foreground">
-						Servers
-					</h1>
-					<p className="text-ui text-muted-foreground mt-1">
-						Your connected VPS instances
-					</p>
-				</div>
-				<Button
-					variant="outline"
-					className="uppercase tracking-wider text-label"
-					onClick={() => navigate("/add")}
-				>
-					<Plus className="w-3.5 h-3.5 mr-2" />
-					Add Server
-				</Button>
-			</div>
+	const actions = (
+		<Button
+			variant="outline"
+			className="uppercase tracking-wider text-label"
+			onClick={() => navigate("/add")}
+		>
+			<Plus className="w-3.5 h-3.5 mr-2" />
+			Add Server
+		</Button>
+	);
 
+	return (
+		<PageLayout
+			title="Servers"
+			subtitle="Your connected VPS instances"
+			actions={actions}
+		>
 			{agents.length === 0 ? (
 				<div className="border border-border bg-card p-8 card-glow flex flex-col items-center justify-center text-center">
 					<Monitor className="w-8 h-8 text-muted-foreground mb-3" />
@@ -70,41 +68,14 @@ export function OverviewPage() {
 			) : (
 				<div className="space-y-2">
 					{agents.map((agent) => (
-						<div
+						<AgentListItem
 							key={agent.id}
-							className="border border-border bg-card px-4 py-3 card-glow flex items-center justify-between"
-						>
-							<div className="flex items-center gap-3">
-								<div
-									className={`w-2 h-2 rounded-full ${
-										agent.status === "online"
-											? "bg-smui-aurora-green"
-											: "bg-muted-foreground/40"
-									}`}
-								/>
-								<div>
-									<p className="text-ui text-foreground font-medium">
-										{agent.hostname || agent.id.slice(0, 12)}
-									</p>
-									<p className="text-label text-muted-foreground tracking-wider">
-										{agent.os && `${agent.distro || agent.os} · `}
-										{agent.arch}
-										{agent.agentVersion && ` · ${agent.agentVersion}`}
-									</p>
-								</div>
-							</div>
-							<Button
-								variant="ghost"
-								size="icon-xs"
-								onClick={() => handleRemove(agent.id)}
-								className="text-muted-foreground hover:text-destructive"
-							>
-								<Trash2 className="w-3.5 h-3.5" />
-							</Button>
-						</div>
+							agent={agent}
+							onRemove={handleRemove}
+						/>
 					))}
 				</div>
 			)}
-		</div>
+		</PageLayout>
 	);
 }
