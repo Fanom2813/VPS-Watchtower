@@ -13,6 +13,26 @@ export interface AgentDTO {
 	lastSeen: number;
 }
 
+export interface UpdateInfo {
+	available: boolean;
+	version?: string;
+	currentVersion?: string;
+	error?: string;
+}
+
+export interface DownloadResult {
+	success: boolean;
+	ready?: boolean;
+	error?: string;
+}
+
+export interface AppSettings {
+	autoStart: boolean;
+	startInTray: boolean;
+	minimizeToTray: boolean;
+	autoUpdate: boolean;
+}
+
 export type AppRPC = {
 	bun: RPCSchema<{
 		requests: {
@@ -33,6 +53,17 @@ export type AppRPC = {
 			};
 			broadcastToAgents: { params: { message: object }; response: boolean };
 			isAgentConnected: { params: { agentId: string }; response: boolean };
+			// Window controls
+			closeWindow: { params: {}; response: void };
+			minimizeWindow: { params: {}; response: void };
+			// Updates
+			checkForUpdate: { params: {}; response: UpdateInfo };
+			downloadUpdate: { params: {}; response: DownloadResult };
+			applyUpdate: { params: {}; response: void };
+			// Settings
+			getSettings: { params: {}; response: AppSettings };
+			setSettings: { params: { settings: AppSettings }; response: void };
+			openExternal: { params: { url: string }; response: boolean };
 		};
 		messages: {};
 	}>;
@@ -42,6 +73,8 @@ export type AppRPC = {
 			agentConnected: { agentId: string };
 			agentDisconnected: { agentId: string };
 			agentMessage: { agentId: string; type: string; payload: unknown };
+			updateAvailable: { version: string };
+			updateDownloaded: {};
 		};
 	}>;
 };

@@ -1,4 +1,4 @@
-import { FileCheck, FileX } from "lucide-react";
+import { FileCheck } from "lucide-react";
 import type { FileIntegrityPayload } from "@/stores/agents";
 import { Empty, EmptyHeader, EmptyTitle, EmptyDescription, EmptyMedia } from "@/components/ui/empty";
 

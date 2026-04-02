@@ -22,7 +22,7 @@ export function PageLayout({
 	return (
 		<div className={`flex flex-col ${className || ""}`}>
 			<div className="flex items-center justify-between px-6 py-4 shrink-0">
-				<div className="flex items-center gap-4">
+				<div className="flex items-start gap-4">
 					{onBack && (
 						<Button
 							variant="ghost"
@@ -46,7 +46,9 @@ export function PageLayout({
 				</div>
 				{actions && <div className="flex items-center gap-2">{actions}</div>}
 			</div>
-			{children}
+			<div className="flex-1 min-h-0 overflow-hidden flex flex-col">
+				{children}
+			</div>
 		</div>
 	);
 }

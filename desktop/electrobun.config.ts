@@ -2,9 +2,9 @@ import type { ElectrobunConfig } from "electrobun";
 
 export default {
 	app: {
-		name: "react-tailwind-vite",
-		identifier: "reacttailwindvite.electrobun.dev",
-		version: "0.0.1",
+		name: "VPS Watchtower",
+		identifier: "com.fanom2813.vpswatchtower",
+		version: "1.0.0",
 	},
 	build: {
 		// Vite builds to dist/, we copy from there
@@ -23,5 +23,8 @@ export default {
 		win: {
 			bundleCEF: false,
 		},
+	},
+	release: {
+		baseUrl: "https://github.com/fanom2813/eyes-on-vps/releases/latest/download",
 	},
 } satisfies ElectrobunConfig;

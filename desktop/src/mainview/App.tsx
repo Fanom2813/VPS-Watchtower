@@ -3,6 +3,7 @@ import { AppLayout } from "@/components/layout/app-layout";
 import { AuthPage } from "@/pages/auth";
 import { OverviewPage } from "@/pages/overview";
 import { AgentDetailsPage } from "@/pages/agent-details";
+import { SettingsPage } from "@/pages/settings";
 import { useAgentsStore } from "@/stores/agents";
 import { useAuthStore } from "@/stores/auth";
 import { useEffect } from "react";
@@ -74,6 +75,7 @@ function App() {
 					<Route path="/add" element={<AuthPage />} />
 					<Route path="/overview" element={<OverviewPage />} />
 					<Route path="/agents/:id" element={<AgentDetailsPage />} />
+					<Route path="/settings" element={<SettingsPage />} />
 					<Route path="*" element={<Navigate to="/" replace />} />
 				</Routes>
 			</AppLayout>

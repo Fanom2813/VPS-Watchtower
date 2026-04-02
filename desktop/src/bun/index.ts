@@ -1,15 +1,22 @@
 import Electrobun, {
-	ApplicationMenu,
 	BrowserView,
 	BrowserWindow,
 	Updater,
 	Utils,
 } from "electrobun/bun";
-import type { AppRPC } from "../shared/rpc-types";
+import type { AppRPC, AppSettings } from "../shared/rpc-types";
 import { closeDb } from "./db/database";
 import * as authRepo from "./db/auth-repo";
 import * as agentsRepo from "./db/agents-repo";
 import * as ws from "./websocket-client";
+
+// In-memory settings ( TODO: persist to database )
+const settings: AppSettings = {
+	autoStart: false,
+	startInTray: false,
+	minimizeToTray: false,
+	autoUpdate: false,
+};
 
 const DEV_SERVER_PORT = 5173;
 const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
@@ -17,15 +24,15 @@ const DEV_SERVER_URL = `http://localhost:${DEV_SERVER_PORT}`;
 function setupWebSocketClient(win: BrowserWindow) {
 	ws.onConnect((agentId) => {
 		agentsRepo.updateLastSeen(agentId);
-		win.webview.rpc?.send.agentConnected({ agentId });
+		(win.webview.rpc as any)?.send.agentConnected({ agentId });
 	});
 
 	ws.onDisconnect((agentId) => {
-		win.webview.rpc?.send.agentDisconnected({ agentId });
+		(win.webview.rpc as any)?.send.agentDisconnected({ agentId });
 	});
 
 	ws.onMessage((agentId, type, payload) => {
-		win.webview.rpc?.send.agentMessage({ agentId, type, payload });
+		(win.webview.rpc as any)?.send.agentMessage({ agentId, type, payload });
 	});
 
 	// Reconnect to all known agents on startup
@@ -65,7 +72,7 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			},
 
 			readClipboard: () => {
-				return Utils.clipboardReadText();
+				return Utils.clipboardReadText() ?? "";
 			},
 
 			addAgent: async ({ url, pairingToken }) => {
@@ -135,12 +142,83 @@ const rpc = BrowserView.defineRPC<AppRPC>({
 			isAgentConnected: ({ agentId }) => {
 				return ws.isConnected(agentId);
 			},
+
+			closeWindow: () => {
+				Utils.quit();
+			},
+
+			minimizeWindow: () => {
+				mainWindow.minimize();
+			},
+
+			checkForUpdate: async () => {
+				const channel = await Updater.localInfo.channel();
+				if (channel === "dev") {
+					return { available: false };
+				}
+
+				const updateInfo = await Updater.checkForUpdate();
+				if (updateInfo.updateAvailable && updateInfo.version) {
+					// Notify frontend
+					(mainWindow.webview.rpc as any)?.send.updateAvailable({ version: updateInfo.version });
+					return {
+						available: true,
+						version: updateInfo.version,
+						currentVersion: (await Updater.localInfo.version()) ?? undefined,
+					};
+				}
+
+				if (updateInfo.error) {
+					return { available: false, error: updateInfo.error };
+				}
+
+				return { available: false };
+			},
+
+			downloadUpdate: async () => {
+				const updateInfo = await Updater.checkForUpdate();
+				if (!updateInfo.updateAvailable) {
+					return { success: false, error: "No update available" };
+				}
+
+				await Updater.downloadUpdate();
+				const currentInfo = Updater.updateInfo();
+
+				if (currentInfo?.updateReady) {
+					(mainWindow.webview.rpc as any)?.send.updateDownloaded({});
+					return { success: true, ready: true };
+				}
+
+				if (currentInfo?.error) {
+					return { success: false, error: currentInfo.error };
+				}
+
+				return { success: true, ready: false };
+			},
+
+			applyUpdate: () => {
+				Updater.applyUpdate();
+			},
+
+			getSettings: () => {
+				return settings;
+			},
+
+			setSettings: ({ settings: newSettings }) => {
+				Object.assign(settings, newSettings);
+				// TODO: persist to database
+				console.log("Settings updated:", settings);
+			},
+
+			openExternal: ({ url }) => {
+				return Utils.openExternal(url);
+			},
 		},
 		messages: {},
 	},
 });
 
-// Create the main application window
+// Create the main application window (starts hidden)
 const url = await getMainViewUrl();
 
 const mainWindow = new BrowserWindow({
@@ -164,13 +242,20 @@ const mainWindow = new BrowserWindow({
 	rpc,
 });
 
+// Show window only when DOM is ready (prevents blank flash)
+mainWindow.webview.on("dom-ready", () => {
+	mainWindow.show();
+});
+
 // Connect to known agents
 setupWebSocketClient(mainWindow);
 
 // Cleanup on quit
 Electrobun.events.on("before-quit", async () => {
+	console.log("before-quit fired - cleaning up...");
 	ws.disconnectAll();
 	closeDb();
+	console.log("cleanup complete");
 });
 
 console.log("Eyes on VPS started!");
