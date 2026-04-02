@@ -48,4 +48,5 @@ agent/coverage.html
 
 # Claude Code
 .claude/
+CLAUDE.md
 agent/agent.json
