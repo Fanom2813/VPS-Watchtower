@@ -1,0 +1,11 @@
+export { OverviewTab } from "./overview-tab";
+export { ProcessesTab } from "./processes-tab";
+export { NetworkTab } from "./network-tab";
+export { AuthTab } from "./auth-tab";
+export { DockerTab } from "./docker-tab";
+export { IntrusionTab } from "./intrusion-tab";
+export { OutboundTab } from "./outbound-tab";
+export { CronTab } from "./cron-tab";
+export { ServicesTab } from "./services-tab";
+export { FilesTab } from "./files-tab";
+export { SensitiveTab } from "./sensitive-tab";

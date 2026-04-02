@@ -8,7 +8,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 	return (
 		<div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
 			<Titlebar />
-			<main className="flex-1 overflow-y-auto">
+			<main className="flex-1 flex flex-col min-h-0">
 				{children}
 			</main>
 		</div>

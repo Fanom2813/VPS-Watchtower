@@ -1,144 +1,185 @@
 import { useNavigate, useParams } from "react-router";
 import { useAgentsStore } from "@/stores/agents";
 import { PageLayout } from "@/components/layout/page-layout";
-import { Activity, Cpu, HardDrive, Network, Shield } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import {
+  LayoutDashboard,
+  Cpu,
+  Terminal,
+  Container,
+  AlertTriangle,
+  Globe,
+  Clock,
+  Settings,
+  FileCheck,
+  Eye,
+} from "lucide-react";
+import {
+  OverviewTab,
+  ProcessesTab,
+  NetworkTab,
+  AuthTab,
+  DockerTab,
+  IntrusionTab,
+  OutboundTab,
+  CronTab,
+  ServicesTab,
+  FilesTab,
+  SensitiveTab,
+} from "@/components/agent-tabs";
 
 export function AgentDetailsPage() {
-	const { id } = useParams();
-	const navigate = useNavigate();
-	const { agents } = useAgentsStore();
-	const agent = agents.find((a) => a.id === id);
+  const { id } = useParams();
+  const navigate = useNavigate();
+  const { agents } = useAgentsStore();
+  const agent = agents.find((a) => a.id === id);
 
-	if (!agent) {
-		return (
-			<PageLayout
-				title="Agent not found"
-				onBack={() => navigate("/overview")}
-			>
-				<div className="flex items-center justify-center h-64 border border-border bg-card">
-					<p className="text-muted-foreground">The requested agent could not be found.</p>
-				</div>
-			</PageLayout>
-		);
-	}
+  if (!agent) {
+    return (
+      <PageLayout
+        title="Agent not found"
+        onBack={() => navigate("/overview")}
+        className="p-6"
+      >
+        <div className="flex items-center justify-center h-64 border border-border bg-card">
+          <p className="text-muted-foreground">The requested agent could not be found.</p>
+        </div>
+      </PageLayout>
+    );
+  }
 
-	const displayName = agent.label || agent.hostname || agent.id.slice(0, 12);
+  const displayName = agent.label || agent.hostname || agent.id.slice(0, 12);
+  const data = agent.collectorData;
 
-	return (
-		<PageLayout
-			title={displayName}
-			subtitle={`${agent.distro || agent.os} · ${agent.arch}`}
-			onBack={() => navigate("/overview")}
-		>
-			<div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-				{/* Stats Cards - Placeholders for now */}
-				<div className="border border-border bg-card p-4 space-y-2">
-					<div className="flex items-center justify-between">
-						<span className="text-label text-muted-foreground uppercase tracking-wider">CPU Usage</span>
-						<Cpu className="w-4 h-4 text-primary" />
-					</div>
-					<div className="flex items-baseline gap-2">
-						<span className="text-2xl font-semibold">--%</span>
-						<span className="text-xs text-muted-foreground font-mono">/ 100%</span>
-					</div>
-				</div>
+  return (
+    <PageLayout
+      title={displayName}
+      subtitle={`${agent.distro || agent.os} · ${agent.arch}`}
+      onBack={() => navigate("/overview")}
+      className="flex flex-col h-full p-0"
+    >
+      {/* Tabs fill available space */}
+      <Tabs defaultValue="overview" className="flex flex-col flex-1 min-h-0">
+        {/* Scrollable content area */}
+        <div className="flex-1 overflow-y-auto px-6 py-4">
+          <TabsContent value="overview" className="mt-0 h-full flex flex-col [&[data-state='inactive']]:hidden">
+            <OverviewTab agent={agent} data={data} />
+          </TabsContent>
 
-				<div className="border border-border bg-card p-4 space-y-2">
-					<div className="flex items-center justify-between">
-						<span className="text-label text-muted-foreground uppercase tracking-wider">Memory</span>
-						<Activity className="w-4 h-4 text-smui-aurora-green" />
-					</div>
-					<div className="flex items-baseline gap-2">
-						<span className="text-2xl font-semibold">--%</span>
-						<span className="text-xs text-muted-foreground font-mono">0.0 / 0.0 GB</span>
-					</div>
-				</div>
+          <TabsContent value="processes" className="mt-0 h-full flex flex-col [&[data-state='inactive']]:hidden">
+            <ProcessesTab data={data.processes} />
+          </TabsContent>
 
-				<div className="border border-border bg-card p-4 space-y-2">
-					<div className="flex items-center justify-between">
-						<span className="text-label text-muted-foreground uppercase tracking-wider">Storage</span>
-						<HardDrive className="w-4 h-4 text-smui-aurora-yellow" />
-					</div>
-					<div className="flex items-baseline gap-2">
-						<span className="text-2xl font-semibold">--%</span>
-						<span className="text-xs text-muted-foreground font-mono">0.0 / 0.0 GB</span>
-					</div>
-				</div>
+          <TabsContent value="network" className="mt-0 h-full flex flex-col [&[data-state='inactive']]:hidden">
+            <NetworkTab data={data.network} />
+          </TabsContent>
 
-				<div className="border border-border bg-card p-4 space-y-2">
-					<div className="flex items-center justify-between">
-						<span className="text-label text-muted-foreground uppercase tracking-wider">Network</span>
-						<Network className="w-4 h-4 text-smui-aurora-blue" />
-					</div>
-					<div className="flex items-baseline gap-2">
-						<span className="text-2xl font-semibold">-- Mb/s</span>
-						<span className="text-xs text-muted-foreground font-mono">UP / DOWN</span>
-					</div>
-				</div>
-			</div>
+          <TabsContent value="auth" className="mt-0 h-full flex flex-col [&[data-state='inactive']]:hidden">
+            <AuthTab data={data.authlog} />
+          </TabsContent>
 
-			<div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-				<div className="border border-border bg-card">
-					<div className="px-4 py-3 border-b border-border flex items-center justify-between">
-						<h3 className="text-label font-semibold uppercase tracking-wider text-foreground">
-							System Information
-						</h3>
-					</div>
-					<div className="p-4 space-y-3">
-						<div className="flex justify-between text-ui">
-							<span className="text-muted-foreground">Hostname</span>
-							<span className="font-mono">{agent.hostname}</span>
-						</div>
-						<div className="flex justify-between text-ui">
-							<span className="text-muted-foreground">OS</span>
-							<span>{agent.os}</span>
-						</div>
-						<div className="flex justify-between text-ui">
-							<span className="text-muted-foreground">Distro</span>
-							<span>{agent.distro}</span>
-						</div>
-						<div className="flex justify-between text-ui">
-							<span className="text-muted-foreground">Architecture</span>
-							<span className="font-mono">{agent.arch}</span>
-						</div>
-						<div className="flex justify-between text-ui">
-							<span className="text-muted-foreground">Agent Version</span>
-							<span className="font-mono">v{agent.agentVersion}</span>
-						</div>
-					</div>
-				</div>
+          <TabsContent value="docker" className="mt-0 h-full flex flex-col [&[data-state='inactive']]:hidden">
+            <DockerTab data={data.docker} />
+          </TabsContent>
 
-				<div className="border border-border bg-card">
-					<div className="px-4 py-3 border-b border-border flex items-center justify-between">
-						<h3 className="text-label font-semibold uppercase tracking-wider text-foreground">
-							Security & Connectivity
-						</h3>
-						<Shield className="w-4 h-4 text-muted-foreground" />
-					</div>
-					<div className="p-4 space-y-3">
-						<div className="flex justify-between text-ui">
-							<span className="text-muted-foreground">Status</span>
-							<span className={`uppercase font-semibold tracking-wider ${
-								agent.status === "online" ? "text-smui-aurora-green" : "text-muted-foreground"
-							}`}>
-								{agent.status}
-							</span>
-						</div>
-						<div className="flex justify-between text-ui">
-							<span className="text-muted-foreground">Endpoint</span>
-							<span className="font-mono text-xs">{agent.url}</span>
-						</div>
-						<div className="flex justify-between text-ui">
-							<span className="text-muted-foreground">Paired At</span>
-							<span>{new Date(agent.pairedAt).toLocaleString()}</span>
-						</div>
-						<div className="flex justify-between text-ui">
-							<span className="text-muted-foreground">Last Seen</span>
-							<span>{agent.lastSeen > 0 ? new Date(agent.lastSeen).toLocaleString() : "Never"}</span>
-						</div>
-					</div>
-				</div>
-			</div>
-		</PageLayout>
-	);
+          <TabsContent value="intrusion" className="mt-0 h-full flex flex-col [&[data-state='inactive']]:hidden">
+            <IntrusionTab data={data.intrusion} />
+          </TabsContent>
+
+          <TabsContent value="outbound" className="mt-0 h-full flex flex-col [&[data-state='inactive']]:hidden">
+            <OutboundTab data={data.outbound} />
+          </TabsContent>
+
+          <TabsContent value="cron" className="mt-0 h-full flex flex-col [&[data-state='inactive']]:hidden">
+            <CronTab data={data.cron} />
+          </TabsContent>
+
+          <TabsContent value="services" className="mt-0 h-full flex flex-col [&[data-state='inactive']]:hidden">
+            <ServicesTab data={data.services} />
+          </TabsContent>
+
+          <TabsContent value="files" className="mt-0 h-full flex flex-col [&[data-state='inactive']]:hidden">
+            <FilesTab data={data.fileIntegrity} />
+          </TabsContent>
+
+          <TabsContent value="sensitive" className="mt-0 h-full flex flex-col [&[data-state='inactive']]:hidden">
+            <SensitiveTab data={data.sensitiveAccess} />
+          </TabsContent>
+        </div>
+
+        {/* Bottom Tab Bar - in flow, not fixed */}
+        <TabsList className="h-8 w-full rounded-none border-t border-border bg-card/95 backdrop-blur-sm px-4 gap-2 shrink-0 justify-center">
+          <TabsTrigger value="overview" className="h-6 w-6 p-0" title="Overview">
+            <LayoutDashboard className="w-4 h-4" />
+          </TabsTrigger>
+
+          <TabsTrigger value="processes" className="h-6 w-6 p-0 relative" title="Processes">
+            <Cpu className="w-4 h-4" />
+            {data.processes?.unknown ? (
+              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-warning rounded-full" />
+            ) : null}
+          </TabsTrigger>
+
+          <TabsTrigger value="network" className="h-6 w-6 p-0" title="Network">
+            <Globe className="w-4 h-4" />
+          </TabsTrigger>
+
+          <TabsTrigger value="auth" className="h-6 w-6 p-0" title="Auth Log">
+            <Terminal className="w-4 h-4" />
+          </TabsTrigger>
+
+          <TabsTrigger value="docker" className="h-6 w-6 p-0 relative" title="Docker">
+            <Container className="w-4 h-4" />
+            {data.docker?.total ? (
+              <span className="absolute -top-0.5 -right-0.5 px-1 py-0 text-[6px] bg-primary text-primary-foreground rounded-full min-w-[10px]">
+                {data.docker.total}
+              </span>
+            ) : null}
+          </TabsTrigger>
+
+          <TabsTrigger value="intrusion" className="h-6 w-6 p-0 relative" title="Intrusion Alerts">
+            <AlertTriangle className="w-4 h-4" />
+            {data.intrusion?.alerts && data.intrusion.alerts.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 px-1 py-0 text-[6px] bg-destructive text-destructive-foreground rounded-full font-medium min-w-[10px]">
+                {data.intrusion.alerts.length}
+              </span>
+            )}
+          </TabsTrigger>
+
+          <TabsTrigger value="outbound" className="h-6 w-6 p-0 relative" title="Outbound">
+            <Globe className="w-4 h-4 rotate-45" />
+            {data.outbound?.newDestinations ? (
+              <span className="absolute top-0.5 right-0.5 w-1.5 h-1.5 bg-warning rounded-full" />
+            ) : null}
+          </TabsTrigger>
+
+          <TabsTrigger value="cron" className="h-6 w-6 p-0" title="Cron Jobs">
+            <Clock className="w-4 h-4" />
+          </TabsTrigger>
+
+          <TabsTrigger value="services" className="h-6 w-6 p-0" title="Services">
+            <Settings className="w-4 h-4" />
+          </TabsTrigger>
+
+          <TabsTrigger value="files" className="h-6 w-6 p-0 relative" title="File Integrity">
+            <FileCheck className="w-4 h-4" />
+            {data.fileIntegrity?.changes && data.fileIntegrity.changes > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 px-1 py-0 text-[6px] bg-destructive text-destructive-foreground rounded-full font-medium min-w-[10px]">
+                {data.fileIntegrity.changes}
+              </span>
+            )}
+          </TabsTrigger>
+
+          <TabsTrigger value="sensitive" className="h-6 w-6 p-0 relative" title="Sensitive Files">
+            <Eye className="w-4 h-4" />
+            {data.sensitiveAccess?.accesses && data.sensitiveAccess.accesses.length > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 px-1 py-0 text-[6px] bg-warning text-warning-foreground rounded-full font-medium min-w-[10px]">
+                {data.sensitiveAccess.total}
+              </span>
+            )}
+          </TabsTrigger>
+        </TabsList>
+      </Tabs>
+    </PageLayout>
+  );
 }

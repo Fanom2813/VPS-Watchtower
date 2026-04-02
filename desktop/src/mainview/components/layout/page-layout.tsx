@@ -8,6 +8,7 @@ interface PageLayoutProps {
 	actions?: React.ReactNode;
 	children: React.ReactNode;
 	onBack?: () => void;
+	className?: string;
 }
 
 export function PageLayout({
@@ -16,10 +17,11 @@ export function PageLayout({
 	actions,
 	children,
 	onBack,
+	className,
 }: PageLayoutProps) {
 	return (
-		<div className="px-6 py-6 space-y-4">
-			<div className="flex items-center justify-between">
+		<div className={`flex flex-col ${className || ""}`}>
+			<div className="flex items-center justify-between px-6 py-4 shrink-0">
 				<div className="flex items-center gap-4">
 					{onBack && (
 						<Button

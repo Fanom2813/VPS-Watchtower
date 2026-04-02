@@ -38,6 +38,34 @@ function AppRoot() {
 }
 
 function App() {
+	const { setOnline, setOffline, updateCollectorData } = useAgentsStore();
+
+	useEffect(() => {
+		// Listen for agent connection events via CustomEvents
+		const handleConnected = (e: Event) => {
+			const { detail } = e as CustomEvent<string>;
+			setOnline(detail);
+		};
+		const handleDisconnected = (e: Event) => {
+			const { detail } = e as CustomEvent<string>;
+			setOffline(detail);
+		};
+		const handleMessage = (e: Event) => {
+			const { detail } = e as CustomEvent<{ agentId: string; type: string; payload: unknown }>;
+			updateCollectorData(detail.agentId, detail.type, detail.payload);
+		};
+
+		window.addEventListener("agent:connected", handleConnected);
+		window.addEventListener("agent:disconnected", handleDisconnected);
+		window.addEventListener("agent:message", handleMessage);
+
+		return () => {
+			window.removeEventListener("agent:connected", handleConnected);
+			window.removeEventListener("agent:disconnected", handleDisconnected);
+			window.removeEventListener("agent:message", handleMessage);
+		};
+	}, [setOnline, setOffline, updateCollectorData]);
+
 	return (
 		<BrowserRouter>
 			<AppLayout>
